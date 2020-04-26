@@ -15,6 +15,7 @@ import org.deeplearning4j.nn.conf.layers.*;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
+import org.deeplearning4j.optimize.listeners.TimeIterationListener;
 import org.deeplearning4j.ui.stats.StatsListener;
 import org.deeplearning4j.ui.storage.FileStatsStorage;
 import org.nd4j.evaluation.classification.Evaluation;
@@ -120,7 +121,7 @@ public class App
                 .seed(System.currentTimeMillis())
                 .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
                 //.l1(0.0001)
-                .l2(0.0004)
+                .l2(0.0002)
                 //.dropOut(0.8)
                 .updater(new Nesterovs(learningRate, momentum))
                 .list()
@@ -138,12 +139,12 @@ public class App
         network = new MultiLayerNetwork(configuration);
         network.init();
 
-        network.setListeners(new ScoreIterationListener(10));
+        network.setListeners(new ScoreIterationListener(10), new TimeIterationListener(10));
         attachUI(network);
 
         //start network and evaluate once finished
         double start_time = System.currentTimeMillis();
-        network.fit(trainIterator, 20);
+        network.fit(trainIterator, 15);
         Evaluation evaluation = network.evaluate(testIterator);
         double duration = (System.currentTimeMillis() - start_time)/1000/60;
 
@@ -167,21 +168,18 @@ public class App
         {
             FileWriter fileWriter;
             try {
-                fileWriter = new FileWriter("/data/outputs/" + learningRate + ", " + momentum + ".txt");
+                fileWriter = new FileWriter("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\outputs\\" + learningRate + "," + momentum + ".txt");
             }
             catch (IOException ioException) {
-                fileWriter = new FileWriter("/data/outputs/" + learningRate + ", " + momentum + "_1" + ".txt");
+                fileWriter = new FileWriter("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\outputs\\" + learningRate + "," + momentum + "_1" + ".txt");
             }
             fileWriter.append(e.stats());
             fileWriter.append("This run took ").append(String.valueOf(duration)).append(" minutes.");
             fileWriter.append(network.evaluateROCMultiClass(testIterator, 0).stats());
         }
-        else
-        {
             System.out.println(e.stats());
             System.out.println("This run took " + duration + " minutes.");
             System.out.println(network.evaluateROCMultiClass(testIterator, 0));
-        }
     }
 
     public static void main(String[] args) {
