@@ -26,7 +26,7 @@ import org.nd4j.linalg.dataset.api.preprocessor.ImagePreProcessingScaler;
 import org.nd4j.linalg.learning.config.Nesterovs;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.deeplearning4j.ui.api.*;
-
+import org.slf4j.Logger;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -34,6 +34,7 @@ import java.util.Random;
 
 public class App
 {
+    private static final Logger log = org.slf4j.LoggerFactory.getLogger(App.class);
     MultiLayerNetwork network;
     DataSetIterator testIterator;
     UIServer uiServer;
@@ -45,7 +46,7 @@ public class App
     public App() throws IOException
     {
         //configure training data and normalizer
-        trainData = new File("D:\\cam29\\Downloads\\100-bird-species\\180\\train");
+        trainData = new File("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\inputs\\100-bird-species\\180\\train");
         FileSplit trainSplit = new FileSplit(trainData, NativeImageLoader.ALLOWED_FORMATS, new Random());
         ParentPathLabelGenerator labelMaker = new ParentPathLabelGenerator();
         ImageRecordReader rr = new ImageRecordReader(224,224,3, labelMaker);
@@ -56,7 +57,7 @@ public class App
         trainIterator.setPreProcessor(imageScaler);
 
         //configure testing data
-        testData = new File("D:\\cam29\\Downloads\\100-bird-species\\180\\test");
+        testData = new File("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\inputs\\100-bird-species\\180\\test");
         FileSplit testSplit = new FileSplit(testData, NativeImageLoader.ALLOWED_FORMATS, new Random());
         ImageRecordReader rrTest = new ImageRecordReader(224,224,3, labelMaker);
         rrTest.initialize(testSplit);
@@ -120,9 +121,9 @@ public class App
         MultiLayerConfiguration configuration = new NeuralNetConfiguration.Builder()
                 .seed(System.currentTimeMillis())
                 .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
-                //.l1(0.0001)
-                .l2(0.0002)
-                //.dropOut(0.8)
+                .l1(0.0001)
+                .l2(0.0001)
+                .dropOut(0.8)
                 .updater(new Nesterovs(learningRate, momentum))
                 .list()
                 .layer(0, layer0)
@@ -138,15 +139,16 @@ public class App
         //initialize network
         network = new MultiLayerNetwork(configuration);
         network.init();
-
+        log.info(network.summary());
         network.setListeners(new ScoreIterationListener(10), new TimeIterationListener(10));
         attachUI(network);
 
         //start network and evaluate once finished
         double start_time = System.currentTimeMillis();
-        network.fit(trainIterator, 15);
+        network.fit(trainIterator, 25);
+        System.out.println("Training complete. Testing...");
         Evaluation evaluation = network.evaluate(testIterator);
-        double duration = (System.currentTimeMillis() - start_time)/1000/60;
+        duration = (System.currentTimeMillis() - start_time)/1000/60;
 
         //print results if run was successful
         if (evaluation.accuracy() > 0.15)
@@ -173,13 +175,16 @@ public class App
             catch (IOException ioException) {
                 fileWriter = new FileWriter("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\outputs\\" + learningRate + "," + momentum + "_1" + ".txt");
             }
-            fileWriter.append(e.stats());
-            fileWriter.append("This run took ").append(String.valueOf(duration)).append(" minutes.");
+            fileWriter.write(e.stats(true));
+            fileWriter.write("\n" + e.confusionMatrix() + "\n");
+            fileWriter.append("This run took ").append(String.valueOf(duration)).append(" minutes.").append("\n");
             fileWriter.append(network.evaluateROCMultiClass(testIterator, 0).stats());
+            fileWriter.flush();
+            fileWriter.close();
         }
             System.out.println(e.stats());
             System.out.println("This run took " + duration + " minutes.");
-            System.out.println(network.evaluateROCMultiClass(testIterator, 0));
+            System.out.println(network.evaluateROCMultiClass(testIterator, 0).stats());
     }
 
     public static void main(String[] args) {
