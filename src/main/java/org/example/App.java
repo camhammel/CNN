@@ -7,6 +7,14 @@ import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.api.storage.StatsStorage;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
+import org.deeplearning4j.earlystopping.EarlyStoppingConfiguration;
+import org.deeplearning4j.earlystopping.EarlyStoppingResult;
+import org.deeplearning4j.earlystopping.saver.LocalFileModelSaver;
+import org.deeplearning4j.earlystopping.scorecalc.DataSetLossCalculator;
+import org.deeplearning4j.earlystopping.termination.MaxEpochsTerminationCondition;
+import org.deeplearning4j.earlystopping.termination.MaxTimeIterationTerminationCondition;
+import org.deeplearning4j.earlystopping.trainer.EarlyStoppingTrainer;
+import org.deeplearning4j.nn.api.Model;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
@@ -27,18 +35,20 @@ import org.nd4j.linalg.learning.config.Nesterovs;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.deeplearning4j.ui.api.*;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 public class App
 {
     private static final Logger log = org.slf4j.LoggerFactory.getLogger(App.class);
     MultiLayerNetwork network;
-    DataSetIterator testIterator;
+    DataSetIterator trainIterator, testIterator, validIterator;
     UIServer uiServer;
-    File trainData, testData;
+    File trainData, testData, validData;
     double learningRate = 0.001;
     double momentum = 0.9;
     double duration;
@@ -51,7 +61,7 @@ public class App
         ParentPathLabelGenerator labelMaker = new ParentPathLabelGenerator();
         ImageRecordReader rr = new ImageRecordReader(224,224,3, labelMaker);
         rr.initialize(trainSplit);
-        DataSetIterator trainIterator = new RecordReaderDataSetIterator(rr,64,1,180);
+        trainIterator = new RecordReaderDataSetIterator(rr,64,1,180);
         DataNormalization imageScaler = new ImagePreProcessingScaler();
         imageScaler.fit(trainIterator);
         trainIterator.setPreProcessor(imageScaler);
@@ -63,6 +73,14 @@ public class App
         rrTest.initialize(testSplit);
         testIterator = new RecordReaderDataSetIterator(rrTest, 64, 1, 180);
         testIterator.setPreProcessor(imageScaler);
+
+        //configure validation data
+        validData = new File("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\inputs\\100-bird-species\\180\\valid");
+        FileSplit validSplit = new FileSplit(testData, NativeImageLoader.ALLOWED_FORMATS, new Random());
+        ImageRecordReader rrValid = new ImageRecordReader(224,224,3, labelMaker);
+        rrValid.initialize(validSplit);
+        validIterator = new RecordReaderDataSetIterator(rrValid, 64, 1, 180);
+        validIterator.setPreProcessor(imageScaler);
 
         //configure network structure
         ConvolutionLayer layer0 = new ConvolutionLayer.Builder(5,5)
@@ -136,32 +154,49 @@ public class App
                 .setInputType(InputType.convolutional(224,224,3))
                 .build();
 
+        EarlyStoppingConfiguration esConf = new EarlyStoppingConfiguration.Builder()
+                .epochTerminationConditions(new MaxEpochsTerminationCondition(30))
+                .iterationTerminationConditions(new MaxTimeIterationTerminationCondition(60, TimeUnit.MINUTES))
+                .scoreCalculator(new DataSetLossCalculator(validIterator, true))
+                .evaluateEveryNEpochs(1)
+                .modelSaver(new LocalFileModelSaver("C:\\Users\\Cameron\\IdeaProjects\\CNN\\data\\outputs\\models"))
+                .build();
+
+        EarlyStoppingTrainer trainer = new EarlyStoppingTrainer(esConf, configuration, trainIterator);
+        EarlyStoppingResult result = trainer.fit();
+
+        System.out.println("Terminated due to: " + result.getTerminationReason());
+        System.out.println(result.getTerminationDetails());
+        System.out.println("Best epoch: " + result.getBestModelEpoch() + " / " + result.getTotalEpochs() + " total epochs.");
+        System.out.println("Score at best epoch: " + result.getBestModelScore());
+        //Model model  = result.getBestModel();
+
         //initialize network
-        network = new MultiLayerNetwork(configuration);
-        network.init();
-        log.info(network.summary());
-        network.setListeners(new ScoreIterationListener(10), new TimeIterationListener(10));
-        attachUI(network);
+        //network = new MultiLayerNetwork(configuration);
+        //network.init();
+        //log.info(network.summary());
+        //network.setListeners(new ScoreIterationListener(10), new TimeIterationListener(10));
+        //attachUI(network);
 
         //start network and evaluate once finished
-        double start_time = System.currentTimeMillis();
-        network.fit(trainIterator, 25);
-        System.out.println("Training complete. Testing...");
-        Evaluation evaluation = network.evaluate(testIterator);
-        duration = (System.currentTimeMillis() - start_time)/1000/60;
+        //double start_time = System.currentTimeMillis();
+        //network.fit(trainIterator, 25);
+        //System.out.println("Training complete. Testing...");
+        //Evaluation evaluation = network.evaluate(testIterator);
+        //duration = (System.currentTimeMillis() - start_time)/1000/60;
 
         //print results if run was successful
-        if (evaluation.accuracy() > 0.15)
-            printOutput(true, evaluation);
+        //if (evaluation.accuracy() > 0.15)
+        //    printOutput(true, evaluation);
 
         //otherwise repeat
-        else
-        {
-            System.out.println("Accuracy low at " + evaluation.accuracy());
-            System.out.println("Repeating...");
-            new App();
-        }
-        uiServer.stop();
+        //else
+        //{
+        //    System.out.println("Accuracy low at " + evaluation.accuracy());
+        //    System.out.println("Repeating...");
+        //    new App();
+        //}
+        //uiServer.stop();
     }
 
     public void printOutput(boolean toFile, Evaluation e) throws IOException
